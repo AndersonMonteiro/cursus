@@ -31,3 +31,7 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local working notes, not part of the public repository
+CLAUDE.md
+docs/DECISIONS-LOCAL.md
