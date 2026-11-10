@@ -34,4 +34,4 @@ go.work.sum
 
 # Local working notes, not part of the public repository
 CLAUDE.md
-docs/DECISIONS-LOCAL.md
+local/
