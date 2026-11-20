@@ -4,13 +4,6 @@ version: "2"
 # fails a check of its own.
 linters:
   default: standard
-  settings:
-    errcheck:
-      # A failed write to stdout or stderr has nowhere to be reported.
-      exclude-functions:
-        - fmt.Fprint
-        - fmt.Fprintf
-        - fmt.Fprintln
 
 formatters:
   enable:
