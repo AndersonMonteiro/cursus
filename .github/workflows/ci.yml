@@ -1,0 +1,227 @@
+name: ci
+
+# No path filters: every job below is a required status check, and a required
+# check whose workflow is filtered out stays pending and blocks the merge.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Tools that are not actions. Dependabot does not see these, so they are
+# raised by hand. Each checksum is the one upstream publishes for the release.
+env:
+  GOLANGCI_LINT_VERSION: v2.15.0
+  GOSEC_VERSION: v2.30.0
+  GOVULNCHECK_VERSION: v1.10.0
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  SYFT_VERSION: v1.57.2
+  TRIVY_VERSION: v0.76.2
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    services:
+      postgres:
+        # Same image as compose.yaml, with the values of .env.example, so
+        # `make migrate` runs here exactly as it does on a local machine.
+        image: postgres:17.12
+        env:
+          POSTGRES_USER: cursus
+          POSTGRES_PASSWORD: local-dev-postgres
+          POSTGRES_DB: cursus
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cursus -d cursus"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Apply migrations
+        run: |
+          cp .env.example .env
+          make migrate
+      - name: Check that the migrations created the schemas
+        env:
+          PGPASSWORD: local-dev-postgres
+        run: |
+          found=$(psql --host 127.0.0.1 --username cursus --dbname cursus \
+            --tuples-only --no-align \
+            --command "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('control', 'audit')")
+          test "$found" = "2"
+      - name: Test
+        run: go test -race -count=1 ./...
+
+  lint:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  sast:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # gosec defaults: any finding, of any severity or confidence, fails.
+      - name: gosec
+        run: go run "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}" ./...
+
+  vuln:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      # Fails when the code calls a vulnerable symbol. Vulnerabilities in
+      # modules that are required but never called are reported only.
+      - name: govulncheck
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+
+  secrets:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # gitleaks reads the commit history, not only the working tree.
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "$RUNNER_TEMP/gitleaks.tar.gz" --directory "$RUNNER_TEMP" gitleaks
+      # Default rules and no configuration file: nothing is allowlisted,
+      # .env.example included.
+      - name: gitleaks
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --redact --verbose .
+
+  image:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build images
+        run: |
+          docker build --target api --tag cursus-api:ci .
+          docker build --target worker --tag cursus-worker:ci .
+      - name: SBOM of the api image
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ env.SYFT_VERSION }}
+          image: cursus-api:ci
+          format: spdx-json
+          output-file: sbom-api.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: SBOM of the worker image
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ env.SYFT_VERSION }}
+          image: cursus-worker:ci
+          format: spdx-json
+          output-file: sbom-worker.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-api
+          path: sbom-api.spdx.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-worker
+          path: sbom-worker.spdx.json
+          if-no-files-found: error
+      # The action installs Trivy v0.70.0 unless told otherwise.
+      - name: Scan the api image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: cursus-api:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan the worker image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          image-ref: cursus-worker:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  workflows:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint
+        run: |
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "$RUNNER_TEMP/actionlint.tar.gz" --directory "$RUNNER_TEMP" actionlint
+      - name: actionlint
+        run: |
+          "$RUNNER_TEMP/actionlint" -color
+      # Without Advanced Security the action prints its findings and fails
+      # the job on them, and needs no permission beyond reading the code.
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          advanced-security: false

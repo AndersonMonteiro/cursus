@@ -1,0 +1,17 @@
+version: "2"
+
+# gosec is not enabled here: it runs as its own job, so a security finding
+# fails a check of its own.
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # A failed write to stdout or stderr has nowhere to be reported.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+formatters:
+  enable:
+    - gofmt
