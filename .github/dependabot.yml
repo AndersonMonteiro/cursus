@@ -38,3 +38,14 @@ updates:
       default-days: 7
     commit-message:
       prefix: chore
+    ignore:
+      - dependency-name: postgres
+        update-types:
+          - version-update:semver-major
+      - dependency-name: redis
+        update-types:
+          - version-update:semver-major
+      - dependency-name: clickhouse/clickhouse-server
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
