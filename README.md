@@ -72,7 +72,7 @@ Guardrails run as a checker pipeline before and after each model call, with buil
 
 Observability uses OpenTelemetry spans at three boundaries, model, tool, and policy, exported to Langfuse. The audit log is a separate append-only store. Evaluations run through promptfoo against the HTTP API. The interface is server-rendered and limited to three screens: agents, approval queue, and run view.
 
-Local infrastructure is Postgres, Temporal, and Langfuse under Docker Compose. CI runs build, vet, lint, tests, gosec, govulncheck, gitleaks, SBOM generation, image scanning, and signs images with cosign. Redis, Kafka, and Kubernetes are absent until an agent needs them.
+Local infrastructure is Postgres, Temporal, and Langfuse under Docker Compose. Langfuse requires ClickHouse, Redis, and S3-compatible storage of its own, so the Compose file starts those three for it and Cursus never connects to them. CI runs build, vet, lint, tests, gosec, govulncheck, gitleaks, SBOM generation, image scanning, and signs images with cosign. Cursus itself takes no dependency on Redis, Kafka, or Kubernetes until an agent needs them.
 
 ### Points of variation
 

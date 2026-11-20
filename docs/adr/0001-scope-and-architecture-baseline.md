@@ -26,7 +26,7 @@ Seven stages, drawn as a loop: spec, design, build, evaluate, deploy, operate, w
 | Evaluation | promptfoo, driving the HTTP API as a provider. |
 | Authentication | A minimal JWT issuer shipped with the project, with four roles: spec author, owner, approver, client service. Token verification is behind an interface so the issuer can be replaced. |
 | Interface | Server-rendered, three screens: agents, approval queue, run view. |
-| Local infrastructure | Postgres, Temporal, and Langfuse under Docker Compose. |
+| Local infrastructure | Postgres, Temporal, and Langfuse under Docker Compose, together with the ClickHouse, Redis, and MinIO services that Langfuse requires. Cursus connects only to Postgres, Temporal, and Langfuse. |
 | Supply chain | Images signed with cosign; CI runs static analysis, vulnerability scanning, secrets scanning, SBOM generation, and image scanning. |
 
 ### API shape
@@ -56,7 +56,7 @@ Every run records its parent run and delegation depth. Budgets and policies are 
 
 ### Excluded from the first version
 
-Multi-provider routing by strategy, long-term and episodic memory, speech, MCP tool sources, parallel and conditional orchestration beyond child workflows, a full operations frontend, Redis, Kafka, Kubernetes. Each may enter in a later phase when an agent requires it, with its own ADR.
+Multi-provider routing by strategy, long-term and episodic memory, speech, MCP tool sources, parallel and conditional orchestration beyond child workflows, a full operations frontend, and Redis, Kafka, or Kubernetes as dependencies of Cursus. Redis runs locally only as a backing service of Langfuse. Each may enter in a later phase when an agent requires it, with its own ADR.
 
 ### Boundary
 
@@ -76,6 +76,6 @@ Cursus owns the mechanism of the lifecycle: spec format, versions, states, run e
 
 ## Consequences
 
-The runtime cannot run without Temporal, and a change of durable engine means a rewrite of the runtime package. Local development needs three services under Compose. Evaluation requires a Python or Node toolchain alongside Go. The identity model allows a client to assert approvers, which moves part of dual-control assurance to the client and must stay visible in the security model.
+The runtime cannot run without Temporal, and a change of durable engine means a rewrite of the runtime package. Local development needs Postgres, Temporal, and Langfuse under Compose, and Langfuse brings ClickHouse, Redis, and MinIO with it, which makes seven containers and a memory footprint dominated by Langfuse. Evaluation requires a Python or Node toolchain alongside Go. The identity model allows a client to assert approvers, which moves part of dual-control assurance to the client and must stay visible in the security model.
 
 In return, approvals, retries, timeouts, and compensation are provided by the engine rather than written here; every stage of the lifecycle has a defined artifact; and the system stays small enough to read.
