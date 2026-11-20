@@ -12,7 +12,7 @@ The phase closes when a pull request carrying a planted fake secret is blocked b
 |---|---|---|
 | 1 | Repository skeleton: README, ADR-0001, security policy, PR template | [#1](https://github.com/AndersonMonteiro/cursus/issues/1), merged |
 | 2 | Local environment: Compose with Postgres, Temporal, and Langfuse with its backing services (ClickHouse, Redis, MinIO); migrations; API and worker entry points with health endpoints | [#3](https://github.com/AndersonMonteiro/cursus/issues/3) |
-| 3 | CI: build, vet, lint, tests against Postgres, static analysis, vulnerability and secrets scanning, SBOM, image scan, dependency updates | [#4](https://github.com/AndersonMonteiro/cursus/issues/4) |
+| 3 | CI: build, vet, lint, tests against Postgres, static analysis, vulnerability and secrets scanning, SBOM, image scan, linting of the workflow files, dependency updates | [#4](https://github.com/AndersonMonteiro/cursus/issues/4) |
 | 4 | Minimal token issuer and verification middleware with tenant and the four roles | [#5](https://github.com/AndersonMonteiro/cursus/issues/5) |
 
 Slices 2 and 3 can proceed in either order. Slice 4 depends on 2 for the service skeleton and on 3 for the CI that checks it.

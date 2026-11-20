@@ -16,15 +16,15 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprint(stderr, usage)
+		fmt.Fprint(stderr, usage) //nolint:errcheck // terminal write
 		return 2
 	}
 	switch args[0] {
 	case "version":
-		fmt.Fprintln(stdout, version())
+		fmt.Fprintln(stdout, version()) //nolint:errcheck // terminal write
 		return 0
 	default:
-		fmt.Fprintf(stderr, "agentctl: unknown command %q\n\n%s", args[0], usage)
+		fmt.Fprintf(stderr, "agentctl: unknown command %q\n\n%s", args[0], usage) //nolint:errcheck // terminal write
 		return 2
 	}
 }

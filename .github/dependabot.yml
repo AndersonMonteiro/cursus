@@ -1,0 +1,40 @@
+version: 2
+
+# A release must be a week old before it is proposed, which leaves time for a
+# compromised version to be noticed and withdrawn upstream.
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
