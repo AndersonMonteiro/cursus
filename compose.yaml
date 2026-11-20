@@ -15,7 +15,7 @@ x-langfuse-depends-on: &langfuse-depends-on
 
 x-langfuse-env: &langfuse-env
   NEXTAUTH_URL: http://localhost:${LANGFUSE_PORT:?}
-  DATABASE_URL: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${LANGFUSE_POSTGRES_DB:?}
+  DATABASE_URL: postgresql://${LANGFUSE_POSTGRES_USER:?}:${LANGFUSE_POSTGRES_PASSWORD:?}@postgres:5432/${LANGFUSE_POSTGRES_DB:?}
   SALT: ${LANGFUSE_SALT:?}
   ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?}
   TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:?}
@@ -50,12 +50,15 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
       POSTGRES_DB: ${POSTGRES_DB:?}
+      LANGFUSE_POSTGRES_USER: ${LANGFUSE_POSTGRES_USER:?}
+      LANGFUSE_POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:?}
+      LANGFUSE_POSTGRES_DB: ${LANGFUSE_POSTGRES_DB:?}
       # Langfuse does not support a Postgres server running outside UTC.
       TZ: UTC
       PGTZ: UTC
     configs:
-      - source: postgres-create-langfuse-db
-        target: /docker-entrypoint-initdb.d/10-create-langfuse-db.sql
+      - source: postgres-init-langfuse
+        target: /docker-entrypoint-initdb.d/10-init-langfuse.sh
     ports:
       - 127.0.0.1:${POSTGRES_PORT:?}:5432
     volumes:
@@ -175,10 +178,20 @@ services:
 
 configs:
   # Langfuse migrates the public schema of its database, so it gets a database
-  # of its own on the shared server. Init scripts run only on an empty volume.
-  postgres-create-langfuse-db:
+  # of its own on the shared server, owned by a role without superuser rights.
+  # Revoking CONNECT from PUBLIC keeps that role out of the Cursus database.
+  # Init scripts run only on an empty volume.
+  postgres-init-langfuse:
     content: |
-      CREATE DATABASE "${LANGFUSE_POSTGRES_DB:?}";
+      psql --set ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" \
+        --set langfuse_user="$$LANGFUSE_POSTGRES_USER" \
+        --set langfuse_password="$$LANGFUSE_POSTGRES_PASSWORD" \
+        --set langfuse_db="$$LANGFUSE_POSTGRES_DB" \
+        --set cursus_db="$$POSTGRES_DB" <<'SQL'
+      CREATE ROLE :"langfuse_user" LOGIN PASSWORD :'langfuse_password';
+      CREATE DATABASE :"langfuse_db" OWNER :"langfuse_user";
+      REVOKE CONNECT ON DATABASE :"cursus_db" FROM PUBLIC;
+      SQL
 
 volumes:
   postgres-data:
