@@ -27,7 +27,7 @@ A token is accepted when its signature verifies with the key, its algorithm is H
 
 ### Verification seam
 
-Verification is the interface `auth.Verifier` in `internal/auth`, with one method that takes the token string and returns `auth.Claims` (subject, tenant, roles, expiry) or an error. The HS256 verifier is its first implementation. The middleware and every handler depend on the interface and on `auth.Claims`, never on the JWT library.
+Verification is the interface `auth.Verifier` in `internal/auth`, with one method that takes a context and the token string and returns `auth.Claims` (subject, tenant, roles, expiry) or an error. The HS256 verifier is its first implementation. The middleware and every handler depend on the interface and on `auth.Claims`, never on the JWT library.
 
 ### Middleware and errors
 

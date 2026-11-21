@@ -57,7 +57,7 @@ func run() error {
 	// Replacing the issuer means constructing another auth.Verifier here.
 	verifier, err := auth.NewHS256Verifier(cfg.TokenSigningKey, time.Now)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", config.EnvTokenSigningKey, err)
 	}
 
 	handler := routes(logger, verifier, health.Readiness(logger, cfg.ReadinessTimeout,

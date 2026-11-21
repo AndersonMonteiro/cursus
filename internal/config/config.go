@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"github.com/AndersonMonteiro/cursus/internal/auth"
 )
 
 const (
@@ -82,14 +80,10 @@ func load(getenv func(string) string, addrEnv string, verifiesTokens bool) (Conf
 		cfg.ReadinessTimeout = timeout
 	}
 
+	// Only presence is checked here. The length rule belongs to package auth,
+	// and importing it would link the token library into the worker.
 	if verifiesTokens {
-		raw := required(EnvTokenSigningKey)
-		// The length is checked here as well as in package auth so that a
-		// short key is reported together with every other invalid variable.
-		if raw != "" && len(raw) < auth.MinKeyBytes {
-			errs = append(errs, fmt.Errorf("%s must have at least %d bytes, got %d", EnvTokenSigningKey, auth.MinKeyBytes, len(raw)))
-		}
-		cfg.TokenSigningKey = []byte(raw)
+		cfg.TokenSigningKey = []byte(required(EnvTokenSigningKey))
 	}
 
 	if len(errs) > 0 {

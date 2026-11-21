@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	testKey  = []byte("test-signing-key-of-thirty-two-bytes!")
-	otherKey = []byte("another-signing-key-of-enough-bytes!!")
+	testKey  = []byte("test-signing-key-for-unit-tests-only")
+	otherKey = []byte("another-signing-key-for-unit-tests-only")
 	testNow  = time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 )
 
@@ -174,11 +174,27 @@ func TestVerifyRejectsGarbage(t *testing.T) {
 func TestShortKeysAreRejected(t *testing.T) {
 	short := []byte(strings.Repeat("k", MinKeyBytes-1))
 
-	if _, err := NewIssuer(short, time.Now); err == nil {
-		t.Error("NewIssuer accepted a key under the minimum length")
+	_, issuerErr := NewIssuer(short, time.Now)
+	_, verifierErr := NewHS256Verifier(short, time.Now)
+	for name, err := range map[string]error{"NewIssuer": issuerErr, "NewHS256Verifier": verifierErr} {
+		if err == nil {
+			t.Errorf("%s accepted a key under the minimum length", name)
+			continue
+		}
+		if strings.Contains(err.Error(), string(short)) {
+			t.Errorf("%s: error %q repeats the key", name, err)
+		}
 	}
-	if _, err := NewHS256Verifier(short, time.Now); err == nil {
-		t.Error("NewHS256Verifier accepted a key under the minimum length")
+}
+
+func TestAKeyOfExactlyTheMinimumIsAccepted(t *testing.T) {
+	exact := []byte(strings.Repeat("k", MinKeyBytes))
+
+	if _, err := NewIssuer(exact, time.Now); err != nil {
+		t.Errorf("NewIssuer: %v", err)
+	}
+	if _, err := NewHS256Verifier(exact, time.Now); err != nil {
+		t.Errorf("NewHS256Verifier: %v", err)
 	}
 }
 

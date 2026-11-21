@@ -16,7 +16,7 @@ func validEnv() map[string]string {
 		EnvTemporalNamespace: "default",
 		EnvLogLevel:          "debug",
 		EnvReadinessTimeout:  "2s",
-		EnvTokenSigningKey:   "test-signing-key-of-thirty-two-bytes!",
+		EnvTokenSigningKey:   "test-signing-key-for-unit-tests-only",
 	}
 }
 
@@ -88,25 +88,11 @@ func TestOnlyTheAPIRequiresTheSigningKey(t *testing.T) {
 	}
 }
 
-func TestAShortSigningKeyIsNotEchoed(t *testing.T) {
-	env := validEnv()
-	env[EnvTokenSigningKey] = "short-key-value"
-
-	_, err := LoadAPI(lookup(env))
-	if err == nil {
-		t.Fatal("LoadAPI accepted a short key")
-	}
-	if strings.Contains(err.Error(), "short-key-value") {
-		t.Errorf("error %q repeats the key", err)
-	}
-}
-
 func TestLoadRejectsInvalidValues(t *testing.T) {
 	cases := map[string]struct{ name, value string }{
 		"unknown log level":    {EnvLogLevel, "loud"},
 		"malformed timeout":    {EnvReadinessTimeout, "soon"},
 		"non-positive timeout": {EnvReadinessTimeout, "0s"},
-		"short signing key":    {EnvTokenSigningKey, "thirty-one-bytes-is-one-too-few!"[:31]},
 	}
 	for label, tc := range cases {
 		t.Run(label, func(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	"github.com/AndersonMonteiro/cursus/internal/config"
 )
 
-const testKey = "test-signing-key-of-thirty-two-bytes!"
+const testKey = "test-signing-key-for-unit-tests-only"
 
 func env(key string) func(string) string {
 	return func(name string) string {
@@ -104,6 +104,17 @@ func TestTokenRefusesIncompleteOrInvalidInput(t *testing.T) {
 				t.Errorf("stderr %q repeats the signing key", stderr.String())
 			}
 		})
+	}
+}
+
+func TestTokenHelpExitsZero(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	if code := run([]string{"token", "-h"}, env(""), &stdout, &stderr); code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stderr.String(), "-subject") {
+		t.Errorf("stderr %q does not list the flags", stderr.String())
 	}
 }
 

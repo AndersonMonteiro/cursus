@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -70,6 +71,10 @@ func token(args []string, getenv func(string) string, stdout, stderr io.Writer) 
 	flags.Var(&roles, "role", "role to grant: spec_author, owner, approver, or client_service (required, repeatable)")
 	ttl := flags.Duration("ttl", defaultTokenTTL, "lifetime of the token")
 	if err := flags.Parse(args); err != nil {
+		// Parse has already printed the usage or the error.
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 
