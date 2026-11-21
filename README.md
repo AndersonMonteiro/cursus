@@ -28,7 +28,7 @@ Each stage has an artifact a reader can inspect and a security control the pipel
 | Build | The loop, the workflow, tools, guardrails, payment control, `make demo` | Static analysis, vulnerability and secrets scanning, SBOM, image scan, a test per guardrail |
 | Evaluate | Dataset, scorers, red-team report | Promotion is blocked on adversarial failures, adaptive multi-turn attacks included |
 | Deploy | Promotion job, signed image, canary, one rejected and one approved PR | Only signed and evaluated artifacts are promoted |
-| Operate | Traces, cost per run, alerts, human annotations feeding the dataset | Detection of guardrail block rate, anomalous spend, repeated denials; the red-team suite is repeated against active versions and a new failure suspends the agent |
+| Operate | Traces, cost per run, alerts, human annotations feeding the dataset | Detection of guardrail block rate, anomalous spend, repeated denials; the red-team suite is repeated against active versions and a new failure leads to suspension |
 | Retire | State change, credential revocation, archived runs | The retirement job fails while any credential remains active |
 
 ## What an agent looks like here
@@ -80,7 +80,7 @@ Tools follow one contract with input and output schemas, are registered by type,
 
 Guardrails run as a checker pipeline before and after each model call, with built-in checkers and a hook for the client's own. Payment control is a declarative policy evaluated before any simulated transfer, backed by an intent state machine and an append-only ledger.
 
-Observability uses OpenTelemetry spans at three boundaries, model, tool, and policy, exported to Langfuse. The audit log is a separate append-only store, chained by hash; it holds references and hashes, and the content they point to lives where it can be erased on request without breaking the chain. Evaluations run through promptfoo against the HTTP API. The interface is server-rendered and limited to three screens: agents, approval queue, and run view.
+Observability uses OpenTelemetry spans at three boundaries, model, tool, and policy, exported to Langfuse. Trace content is masked before export and kept for a stated period. The audit log is a separate append-only store, chained by hash; it holds references and hashes, and the content they point to lives where it can be erased on request without breaking the chain. Evaluations run through promptfoo against the HTTP API. The interface is server-rendered and limited to three screens: agents, approval queue, and run view.
 
 Local infrastructure is Postgres, Temporal, and Langfuse under Docker Compose. Langfuse requires ClickHouse, Redis, and S3-compatible storage of its own, so the Compose file starts those three for it and Cursus never connects to them. CI runs build, vet, lint, tests, gosec, govulncheck, gitleaks, SBOM generation, image scanning, and signs images with cosign. Cursus itself takes no dependency on Redis, Kafka, or Kubernetes until an agent needs them.
 

@@ -37,7 +37,7 @@ The API accepts a spec as data and validates it, and the same validation runs in
 
 ### API shape
 
-A run has one of two shapes, declared in the spec. A `task` works toward a result: the client starts it and receives an identifier, and completion and approval requests are delivered by webhook and can be polled. A task may wait for a human for days, so it is never tied to an open request. A `session` holds a conversation: it stays open, each message is a request that receives an answer, and the answer is delivered as a stream. Both shapes are Temporal workflows and pass through the same guardrails, budgets, policy, and audit. The first version builds `task`.
+A run has one of two shapes, declared in the spec. A `task` works toward a result: the client starts it and receives an identifier, and completion and approval requests are delivered by webhook and can be polled. A task may wait for a human for days, so it is never tied to an open request. A `session` holds a conversation: it stays open, each message is a request that receives an answer, and the answer is delivered as a stream. Both shapes are Temporal workflows and pass through the same guardrails, budgets, policy, and audit. How output checks apply to an answer that is streamed is decided in the session ADR. The first version builds `task`.
 
 ### Identity
 
@@ -59,7 +59,7 @@ The model is treated as compromisable. Injected instructions are expected to suc
 
 Three rules follow from this. A spec that combines access to private data, exposure to untrusted input, and a channel to the outside is flagged at validation and held to a higher risk tier. A run that has read untrusted content is marked, and from that point its high-risk tools require human approval; what a delegated agent returns counts as untrusted content for the run that called it. An agent's credentials are scoped to its version, live as briefly as each tool allows, and never enter the model's context.
 
-The red-team suite includes adaptive, multi-turn attacks and is repeated on a schedule against active versions; a new failure suspends the agent.
+The red-team suite includes adaptive, multi-turn attacks and is repeated on a schedule against active versions; a new failure leads to suspension.
 
 ### Audit
 
