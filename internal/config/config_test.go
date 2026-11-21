@@ -16,6 +16,7 @@ func validEnv() map[string]string {
 		EnvTemporalNamespace: "default",
 		EnvLogLevel:          "debug",
 		EnvReadinessTimeout:  "2s",
+		EnvTokenSigningKey:   "test-signing-key-for-unit-tests-only",
 	}
 }
 
@@ -66,6 +67,24 @@ func TestLoadDoesNotRequireTheOtherProcessAddress(t *testing.T) {
 
 	if _, err := LoadAPI(lookup(env)); err != nil {
 		t.Fatalf("LoadAPI needs %s: %v", EnvWorkerAddr, err)
+	}
+}
+
+func TestOnlyTheAPIRequiresTheSigningKey(t *testing.T) {
+	env := validEnv()
+	delete(env, EnvTokenSigningKey)
+
+	worker, err := LoadWorker(lookup(env))
+	if err != nil {
+		t.Fatalf("LoadWorker needs %s: %v", EnvTokenSigningKey, err)
+	}
+	if worker.TokenSigningKey != nil {
+		t.Error("the worker configuration carries a signing key")
+	}
+
+	_, err = LoadAPI(lookup(env))
+	if err == nil || !strings.Contains(err.Error(), EnvTokenSigningKey) {
+		t.Errorf("LoadAPI without the key: error = %v, want one naming %s", err, EnvTokenSigningKey)
 	}
 }
 
