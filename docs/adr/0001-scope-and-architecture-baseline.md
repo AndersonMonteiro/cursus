@@ -26,7 +26,7 @@ The API accepts a spec as data and validates it, and the same validation runs in
 | Concern | Commitment |
 |---|---|
 | Language | Go for the system. Python only where evaluation tooling requires it. |
-| Durable execution | Temporal, used directly, without an abstraction layer over workflows, activities, or signals. |
+| Durable execution | Temporal, used directly, without an abstraction layer over workflows, activities, or signals. Its SDK is imported only by `internal/temporal`, tests included, and the lint rejects an import from any other package. |
 | Database | Postgres. |
 | Observability | OpenTelemetry spans at the model, tool, and policy boundaries, exported over OTLP to Langfuse. |
 | Evaluation | promptfoo, driving the HTTP API as a provider. |
@@ -115,6 +115,6 @@ Cursus owns the mechanism of the lifecycle: spec format, versions, states, run e
 
 ## Consequences
 
-The runtime cannot run without Temporal, and a change of durable engine means a rewrite of the runtime package. Local development needs Postgres, Temporal, and Langfuse under Compose, and Langfuse brings ClickHouse, Redis, and MinIO with it, which makes seven containers and a memory footprint dominated by Langfuse. Evaluation requires a Python or Node toolchain alongside Go. The identity model allows a client to assert approvers, which moves part of dual-control assurance to the client and must stay visible in the security model. The spec carries fields for run shapes and memory that the first version does not execute, which keeps their arrival from changing the version format.
+The runtime cannot run without Temporal, and a change of durable engine means a rewrite of the runtime package. The import boundary confines that rewrite to `internal/temporal` and to the package that holds the workflows; the phase 3 plan names that package and extends the rule if it lies outside `internal/temporal`. Local development needs Postgres, Temporal, and Langfuse under Compose, and Langfuse brings ClickHouse, Redis, and MinIO with it, which makes seven containers and a memory footprint dominated by Langfuse. Evaluation requires a Python or Node toolchain alongside Go. The identity model allows a client to assert approvers, which moves part of dual-control assurance to the client and must stay visible in the security model. The spec carries fields for run shapes and memory that the first version does not execute, which keeps their arrival from changing the version format.
 
 In return, approvals, retries, timeouts, and compensation are provided by the engine rather than written here; every stage of the lifecycle has a defined artifact; and the system stays small enough to read.
