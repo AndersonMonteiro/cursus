@@ -28,8 +28,8 @@ Each stage has an artifact a reader can inspect and a control that is the condit
 | Build | An immutable version that assembles spec, model, tools, guardrails, and memory | A version is created only when every part validates and every tool declares its effect, whether it touches private data, and whether what it returns is untrusted |
 | Evaluate | Dataset, scorers, evaluation evidence, red-team report | Promotion is refused without passing evidence bound to the version hash, with coverage derived from the spec and adaptive multi-turn attacks included |
 | Deploy | Promotion record, canary, one refused and one accepted promotion | Only an evaluated version approved by an owner becomes active |
-| Operate | Traces, cost per run, alerts, human annotations feeding the dataset | Detection of guardrail block rate, anomalous spend, repeated denials; red-team evidence that fails or passes its validity leads to suspension |
-| Retire | State change, credential revocation, archived runs | Retirement is refused while any credential of the agent remains active |
+| Operate | Traces, cost per run, alerts, human annotations feeding the dataset | Detection of guardrail block rate, anomalous spend, repeated denials; red-team evidence that fails or has expired leads to suspension |
+| Retire | State change, credential revocation, archived runs | A version is not retired while any of its credentials remains active |
 
 Spec, design, and build are verified together, when a version is created in `draft`. Building an agent means assembling its spec, model, tools, guardrails, and memory into one immutable version.
 
@@ -39,7 +39,7 @@ Cursus has a cycle of its own, which belongs to its repository. Its pipeline bui
 
 An agent in Cursus has a task with a measurable success criterion, a bounded set of tools, a step and cost budget, declared untrusted inputs, and a risk tier that decides when a human must approve an action. It makes decisions at runtime within those bounds; tasks that can be solved by a fixed sequence of calls are expected to be designed that way instead.
 
-An agent is an entity with versions. A run is addressed to the agent, and the control plane chooses the version that serves it.
+An agent is an entity with versions. A production run is addressed to the agent, and the control plane chooses the version that serves it. An evaluation run names the version it evaluates.
 
 The spec states everything that defines the agent's behaviour, including the shape of its runs and the memory it reads and writes. A run is either a task, which works toward a result and may wait days for an approval, or a session, which holds a conversation turn by turn. Every tool in the spec declares its effect, whether it touches private data, and whether what it returns is untrusted.
 
@@ -56,7 +56,7 @@ Cursus provides the mechanism of the lifecycle. The system that needs an agent, 
 | Guardrail engine, built-in checkers, hook for external checkers | Which rules apply, with what thresholds, plus any custom checker |
 | Tool contract, dispatch, retries, idempotency, approval mechanics | Tool implementations and what each declares, test and production bindings, who approves, how they are notified |
 | Sensitive operation policy and the record of each sensitive operation | Which operations are limited and by how much |
-| Evaluation harness, evidence record, promotion gate, dataset format | Domain dataset and rubric, the running of evaluations |
+| Evaluation harness, evidence record, promotion gate, dataset format | Domain dataset and rubric, running the harness with a credential of its own |
 | Trace and event emission | Business alerts and the response to them |
 
 Cursus governs the agents it executes, with its own loop. Agents that run on an external harness are outside the project.
@@ -77,7 +77,7 @@ The model is treated as compromisable. Injected instructions are expected to suc
 
 Three rules follow from this, and all three read what each tool declares. A spec that combines access to private data, exposure to untrusted input, and a channel to the outside is flagged at validation and held to a higher risk tier. A run records two marks: that it has read untrusted content and that it has read private data. From the first mark on, its tools with a sensitive effect require human approval; what a delegated agent returns counts as untrusted content for the run that called it. An agent's credentials are scoped to its version, live as briefly as each tool allows, never enter the model's context, and are distinct from the tokens that identify callers of the API.
 
-Evidence has a validity. The red-team suite is repeated against active versions by a client of the API, as evaluation runs with test bindings, and the control plane holds every active version to it: evidence that fails or passes its validity leads to suspension.
+Evidence has a validity. The red-team suite is repeated against active versions by a client of the API, as evaluation runs with test bindings, and the control plane holds every active version to it: evidence that fails or has expired leads to suspension.
 
 ## Architecture
 
@@ -85,11 +85,11 @@ The control plane accepts a spec as data through the API, validates it there, an
 
 The runtime is a Temporal workflow per run, for both shapes. A task is a workflow that runs to a result. A session is a workflow that stays open, receives each message as a request, and delivers the answer as a stream. Model calls, tool executions, and policy evaluations are activities, and compensation follows the saga pattern. A paused run waits for a human approval, for another run, or for an external event; it is resumed by a signal and every wait has a timeout. The decision function itself, which maps the current state to the next action, is a pure Go function that fits on one screen, and an action carries one or more tool calls. Runs record their parent run and delegation depth so that budgets and policies apply to a whole tree of agents, not to each run in isolation. A run is an evaluation run or a production run; a draft executes only the first, and an active version accepts both. The first version builds tasks, sequential delegation, and the wait for human approval.
 
-Tools follow one contract with input and output schemas, are registered by type, and are dispatched with an idempotency key derived from the run and step. The address of a tool and the reference to its secret are a binding kept outside the version. A deployment holds two sets of bindings, test and production, and every change of a binding is recorded. The HTTP adapter validates targets against an SSRF policy and pins DNS resolution at dispatch.
+Tools follow one contract with input and output schemas, are registered by type, and are dispatched with an idempotency key derived from the run and step. The address of a tool and the reference to its secret are a binding kept outside the version. A deployment holds two sets of bindings, test and production. Every change of a binding is recorded, and a change to a production binding requires an owner's approval. The HTTP adapter validates targets against an SSRF policy and pins DNS resolution at dispatch.
 
-Guardrails run as a checker pipeline before and after each model call, with built-in checkers and a hook for the client's own. The sensitive operation policy is declarative and is evaluated before every tool call whose declared effect is sensitive. Each such operation states a quantity and a unit, which Cursus records, and the policy applies limits per call and cumulative limits over a window, to the agent and to the tree of runs.
+Guardrails run as a checker pipeline before and after each model call, with built-in checkers and a hook for the client's own. The sensitive operation policy is declarative and is evaluated before every tool call whose declared effect is sensitive. The quantity and unit of each such operation are read from the arguments of the call, as the tool declares them, so the amount checked is the amount executed. Cursus records them, and the policy applies limits per call and cumulative limits over a window, to the agent and to the tree of runs. Evaluation runs and production runs are counted apart.
 
-The evaluation harness is a client of the API. It drives evaluation runs through promptfoo and records the results as evidence against the version hash. The control plane derives from its own records whatever those runs show, such as a tool call refused by the allowlist or a guardrail block, and accepts as asserted only what depends on a judge. The dataset stays with the client; the evidence holds its hash and the results.
+Cursus ships the evaluation harness, and the client runs it with a credential of its own, as one more client of the API. It drives evaluation runs through promptfoo and records the results as evidence against the version hash. The control plane derives from its own records whatever those runs show, such as a tool call refused by the allowlist or a guardrail block, and accepts as asserted only what depends on a judge. The dataset stays with the client; the evidence holds its hash and the results.
 
 Observability uses OpenTelemetry spans at three boundaries, model, tool, and policy, exported to Langfuse. Trace content is masked before export and kept for a stated period. The audit log is a separate append-only store, chained by hash; it holds references and hashes, and the content they point to lives where it can be erased on request without breaking the chain. The interface is server-rendered and limited to three screens: agents, approval queue, and run view.
 
