@@ -16,8 +16,9 @@ The phase closes when a pull request carrying a planted fake secret is blocked b
 | 4 | Minimal token issuer and verification middleware with tenant and the four roles | [#5](https://github.com/AndersonMonteiro/cursus/issues/5) |
 | 5 | Design baseline in README and ADR-0001: run shapes, version identity, security principles, memory, delegation and waiting | [#16](https://github.com/AndersonMonteiro/cursus/issues/16) |
 | 6 | Import boundary for the durable engine: the Temporal SDK is imported by one package and the lint rejects any other import | [#17](https://github.com/AndersonMonteiro/cursus/issues/17) |
+| 7 | Lifecycle baseline in README and ADR-0001: the cycle of the system and the cycle of the agent, controls as conditions of state transitions, evaluation evidence, and the sensitive operation policy | [#20](https://github.com/AndersonMonteiro/cursus/issues/20) |
 
-Slices 2 and 3 can proceed in either order. Slice 4 depends on 2 for the service skeleton and on 3 for the CI that checks it. Slice 6 follows 5 because both edit ADR-0001.
+Slices 2 and 3 can proceed in either order. Slice 4 depends on 2 for the service skeleton and on 3 for the CI that checks it. Slice 6 follows 5 because both edit ADR-0001, and slice 7 follows 6 for the same reason.
 
 ## Out of scope
 

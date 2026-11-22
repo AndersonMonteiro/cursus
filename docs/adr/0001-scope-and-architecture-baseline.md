@@ -13,13 +13,31 @@ The project is built and reviewed in sessions, several of them by AI assistants,
 
 ### Lifecycle
 
-Seven stages, drawn as a loop: spec, design, build, evaluate, deploy, operate, with operate feeding back into spec, and retire as the exit. Governance spans every stage. An agent changes only by moving through the cycle as a new version.
+Seven stages, drawn as a loop: spec, design, build, evaluate, deploy, operate, with operate feeding back into spec, and retire as the exit. Governance spans every stage. An agent is an entity with versions, and it changes only by moving through the cycle as a new version. A production run is addressed to the agent and the control plane chooses the version that serves it; an evaluation run names the version it evaluates. How versions of one agent serve side by side, canary, and rollback are set in the phase 5 plan.
 
 A version is `draft`, `active`, `suspended`, `deprecated`, or `retired`. Suspension takes an active version out of service at once and is recorded as evidence. The transitions and who may suspend are set in the phase 1 plan.
 
+Every control of this lifecycle is a condition of a state transition, verified by the control plane when the API receives the request. A pipeline, a command line, and a service are clients of that API and hold no control of their own, so an agent meets the same conditions whoever provisions it, and the first agent follows the same path as any other. Spec, design, and build are verified together when a version is created: building an agent is assembling its spec, model, tools, guardrails, and memory into one immutable version and validating the whole.
+
+Cursus has a cycle of its own, which belongs to its repository on GitHub, where its pipeline builds, tests, scans, and signs the system. That pipeline governs changes to Cursus and takes no part in the lifecycle of an agent.
+
 ### Version identity
 
-The API accepts a spec as data and validates it, and the same validation runs in CI; `agent.yaml` is one way of writing a spec. A version is identified by a hash over the normalized content of the spec, so two writings of the same spec are the same version. The hash covers the model identifier, its parameters, and the input and output schemas of every tool the agent may call. A model retired by its provider, or a tool whose contract changes, therefore produces a new version, which is evaluated and approved like any other. A tool whose behaviour changes under an unchanged contract is the client's responsibility.
+The API accepts a spec as data and validates it; `agent.yaml` is one way of writing a spec. Everything that defines the behaviour of an agent is in the spec: the model and its parameters, the tools, the guardrails, the memory, the run shape, the budgets, and the allowlists. A version is identified by a hash over the normalized content of the spec, so two writings of the same spec are the same version. For every tool the agent may call, the hash covers the input and output schemas and three declarations: the effect of the tool, whether it touches private data, and whether what it returns is untrusted. A model retired by its provider, or a tool whose contract or declarations change, therefore produces a new version, which is evaluated and approved like any other. A tool whose behaviour changes under an unchanged contract is the client's responsibility, and so is the truth of what a tool declares.
+
+The address of a tool and the reference to its secret are a binding, kept outside the version so that one version serves under more than one binding. A deployment holds two sets of bindings, test and production, both configuration of the same deployment. Every change of a binding is recorded, and a change to a production binding requires an owner's approval.
+
+A version is created only with a threat model and a design record. The design record holds the reasoning behind the values the spec states, together with the flow of the agent, and carries no value of its own. Both documents are bound to the version hash as evidence, with their digests, and stay outside the hash, so revising one is recorded and leaves what executes unchanged.
+
+### Evaluation and promotion
+
+A run is an evaluation run or a production run. A draft executes only evaluation runs. An active version accepts both, which is how the red-team suite is repeated against it. An evaluation run always uses the test bindings, and no production trigger starts a draft.
+
+Promotion to `active` requires evaluation evidence bound to the version hash and an owner's approval. Cursus ships the evaluation harness, and the client runs it as a client of the API with a credential of its own. The subject that runs it cannot be the subject that created the version. The control plane checks that the evidence names the version hash, that the runs it cites are evaluation runs of that version, and that it covers what the spec requires; coverage is derived from the spec, from its tools, its declared untrusted inputs, and its risk tier. Whatever the evaluation runs show in the control plane's own records, such as a tool call refused by the allowlist, a guardrail block, a budget held, or an approval required, is derived there. Only what depends on a judge is accepted as asserted by the evaluator.
+
+The dataset and the rubric belong to the client. Evidence holds the hash of the dataset and the results, without the data.
+
+Evidence has a validity. The red-team suite includes adaptive, multi-turn attacks and is repeated against active versions by a client of the API. The control plane holds every active version to it, and evidence that fails or has expired leads to suspension. The period of validity and the scheduling are set in the phase 6 plan.
 
 ### Technology commitments
 
@@ -41,7 +59,9 @@ A run has one of two shapes, declared in the spec. A `task` works toward a resul
 
 ### Identity
 
-Spec versions are created in `draft` by clients. Promotion to `active` requires passing evaluations and an owner's approval. Approvals of paused runs come either from a Cursus user through the built-in queue or from a client service asserting the approver's identity; the audit log records both the asserted approver and the asserting credential. Dual control across delegated identities is the client's responsibility.
+Versions are created in `draft` by clients. Promotion to `active` requires evaluation evidence and an owner's approval. Approvals of paused runs come either from a Cursus user through the built-in queue or from a client service asserting the approver's identity; the audit log records both the asserted approver and the asserting credential. Dual control across delegated identities is the client's responsibility.
+
+Two kinds of credential exist. A token identifies a caller of the API and is the subject of ADR-0002. The credentials an agent presents to its tools are a separate mechanism, with an ADR of its own that covers their revocation, and a version is not retired while any of its credentials remains active.
 
 ### Runs and delegation
 
@@ -55,11 +75,11 @@ The spec declares the memory an agent uses: the corpora it reads, whether it may
 
 ### Security principles
 
-The model is treated as compromisable. Injected instructions are expected to succeed some of the time, so the controls that decide what an agent can do are deterministic and sit outside the model: tool and domain allowlists, budgets, the approval policy, and the payment policy. Guardrail checkers reduce how often an attack gets through and are never the only barrier.
+The model is treated as compromisable. Injected instructions are expected to succeed some of the time, so the controls that decide what an agent can do are deterministic and sit outside the model: tool and domain allowlists, budgets, the approval policy, and the sensitive operation policy. Guardrail checkers reduce how often an attack gets through and are never the only barrier.
 
-Three rules follow from this. A spec that combines access to private data, exposure to untrusted input, and a channel to the outside is flagged at validation and held to a higher risk tier. A run that has read untrusted content is marked, and from that point its high-risk tools require human approval; what a delegated agent returns counts as untrusted content for the run that called it. An agent's credentials are scoped to its version, live as briefly as each tool allows, and never enter the model's context.
+Three rules follow from this, and all three read what each tool declares. A spec that combines access to private data, exposure to untrusted input, and a channel to the outside is flagged at validation and held to a higher risk tier. A run records two marks: that it has read untrusted content and that it has read private data. From the first mark on, its tools with a sensitive effect require human approval; what a delegated agent returns counts as untrusted content for the run that called it. What the second mark requires is decided in the ADR on the marks of a run. An agent's credentials are scoped to its version, live as briefly as each tool allows, and never enter the model's context.
 
-The red-team suite includes adaptive, multi-turn attacks and is repeated on a schedule against active versions; a new failure leads to suspension.
+The sensitive operation policy is declarative and is evaluated before every tool call whose declared effect is sensitive. The quantity and unit of each such operation are read from the arguments of the call, as the tool declares them, so the amount checked is the amount executed. The control plane records them, and the policy applies limits per call and cumulative limits over a window, to the agent and to the tree of runs. Evaluation runs and production runs are counted apart. Bookkeeping that belongs to a domain stays with the client's tool.
 
 ### Audit
 
@@ -72,7 +92,7 @@ The audit log is append-only and chained by hash. Entries hold references and ha
 | Model provider | Interface, one provider, a fake in tests |
 | Token verification | Interface, minimal issuer first |
 | Run shape | `task` first; `session` named, built when an agent requires it |
-| Tool type | Registry: HTTP, payment, agent as tool; retrieval and MCP when an agent needs them |
+| Tool type | Registry: HTTP, agent as tool; retrieval and MCP when an agent needs them |
 | Delegation | A child workflow per delegated agent; sequential first, parallel named |
 | Wait | Human approval first; another run and an external event named; a timeout on every wait |
 | Guardrail | Interface, built-ins plus client hook |
@@ -95,7 +115,7 @@ Governing agents that run on an external harness, and conversation among peer ag
 
 ### Boundary
 
-Cursus owns the mechanism of the lifecycle: spec format, versions, states, run execution, guardrail engine, tool contract, approval mechanics, evaluation runner, audit, and telemetry emission. Clients own the content: task, limits, rules, tool implementations, approvers, datasets, and business alerting. The demo client is a separate service under `examples/` that uses only the API.
+Cursus owns the mechanism of the lifecycle: spec format, versions, states, run execution, guardrail engine, tool contract, sensitive operation policy, approval mechanics, the evaluation harness, the evidence record and the promotion gate, audit, and telemetry emission. Clients own the content: task, limits, rules, the threat model and the design record, tool implementations with their declarations and bindings, approvers, datasets, the running of evaluations, and business alerting. The demo client is a separate service under `examples/` that uses only the API; it brings its own tools and keeps the spec, threat model, design record, and dataset of each of its agents.
 
 ## Alternatives
 
@@ -111,10 +131,14 @@ Cursus owns the mechanism of the lifecycle: spec format, versions, states, run e
 
 **Governing agents that run on an external harness.** Rejected: the controls in this document depend on Cursus dispatching every model call and every tool call itself, and a loop it does not execute cannot give that guarantee.
 
+**Enforcing the controls of the agent lifecycle in a pipeline.** Rejected: the API is how a client creates a version, so a control that lives in a pipeline is skipped by any client that calls the API directly. As conditions of transitions, the controls hold for every client, and a pipeline remains a convenient way of calling the API.
+
+**Running evaluations inside Cursus.** The control plane would produce the scores itself and the gate would rest on no assertion. It would also bring the evaluation toolchain into the runtime and make Cursus the owner of the client's dataset. With the evaluator as a client, the control plane still derives what its own records show, and only the judged part is asserted.
+
 **Writing the evaluation harness in Go.** Rejected: the evaluation ecosystem is in Python and TypeScript, and the HTTP boundary makes the language of the harness irrelevant to the system.
 
 ## Consequences
 
-The runtime cannot run without Temporal, and a change of durable engine means a rewrite of the runtime package. The import boundary confines that rewrite to `internal/temporal` and to the package that holds the workflows; the phase 3 plan names that package and extends the rule if it lies outside `internal/temporal`. Local development needs Postgres, Temporal, and Langfuse under Compose, and Langfuse brings ClickHouse, Redis, and MinIO with it, which makes seven containers and a memory footprint dominated by Langfuse. Evaluation requires a Python or Node toolchain alongside Go. The identity model allows a client to assert approvers, which moves part of dual-control assurance to the client and must stay visible in the security model. The spec carries fields for run shapes and memory that the first version does not execute, which keeps their arrival from changing the version format.
+The runtime cannot run without Temporal, and a change of durable engine means a rewrite of the runtime package. The import boundary confines that rewrite to `internal/temporal` and to the package that holds the workflows; the phase 3 plan names that package and extends the rule if it lies outside `internal/temporal`. Local development needs Postgres, Temporal, and Langfuse under Compose, and Langfuse brings ClickHouse, Redis, and MinIO with it, which makes seven containers and a memory footprint dominated by Langfuse. Evaluation requires a Python or Node toolchain alongside Go. The identity model allows a client to assert approvers, which moves part of dual-control assurance to the client and must stay visible in the security model. The evaluator is a client, so what depends on a judge reaches the gate as an assertion; the audit log records the credential that made it, and that part of the assurance rests with the client. Bindings sit outside the hash, so an evaluated version can be pointed at a different implementation of a tool, which is why a change to a production binding requires an owner's approval and every change is recorded. The spec carries fields for run shapes and memory that the first version does not execute, which keeps their arrival from changing the version format.
 
 In return, approvals, retries, timeouts, and compensation are provided by the engine rather than written here; every stage of the lifecycle has a defined artifact; and the system stays small enough to read.
