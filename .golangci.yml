@@ -4,6 +4,19 @@ version: "2"
 # fails a check of its own.
 linters:
   default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        # ADR-0001 uses Temporal without an abstraction layer. Keeping its SDK
+        # in one package is what bounds the cost of replacing the engine.
+        temporal:
+          files:
+            - "!**/internal/temporal/**"
+          deny:
+            - pkg: go.temporal.io
+              desc: the Temporal SDK is imported only by internal/temporal (ADR-0001)
 
 formatters:
   enable:
