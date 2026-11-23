@@ -104,7 +104,7 @@ Both are data, stored by the control plane where content can be erased without t
 | Suspend a version | `owner` |
 | Read agents and versions, read the spec schema | any authenticated subject of the tenant |
 
-Owner means any subject holding the `owner` role in the tenant; an agent has no owner field of its own. A version records the subject that created it, which later phases compare with the subject that evaluates it. Every endpoint of this phase is behind authentication, `GET /v1/spec/schema` included.
+Owner means any subject holding the `owner` role in the tenant; an agent has no owner field of its own. A version records the subject that created it, which later phases compare with the subject that evaluates it. Every endpoint of this phase is behind authentication, `GET /v1/spec/schema` included. A request that names an agent or a version of another tenant answers 404, for a write as for a read, so the answer does not show that the resource exists.
 
 ### States and transitions
 
@@ -146,7 +146,7 @@ Format and identity:
 - The hash is SHA-256 over the canonical form of RFC 8785 (JSON Canonicalization Scheme), written `sha256:<hex>`. The agent name is inside the hash; the tenant, the documents, and the version metadata are outside. RFC 8785 sorts object properties and leaves arrays in the order given, so normalization first sorts and deduplicates the two arrays of the spec that are sets, `allowlists.domains` and `untrusted_inputs`. A tool schema is covered as written apart from the order of its properties: arrays inside it, such as `required` or `enum`, are not sorted, and two schemas that differ only there are two versions.
 - `model.provider` is checked as a non-empty string until phase 3 names the provider.
 - `untrusted_inputs` accepts one value in phase 1, `run_input`.
-- `budgets.max_cost` is `{amount, currency}`, with `amount` an integer in the minor unit of the currency, which keeps fractions out of the canonical form.
+- `budgets.max_cost` is `{amount, currency}`, with `amount` an integer in the minor unit of the currency, which keeps fractions out of the canonical form. `currency` is three uppercase letters, checked by the schema as a pattern; the code holds no list of ISO 4217 codes.
 - The unit of a sensitive operation is either read from the call or fixed by the tool: `unit: {pointer: <JSON Pointer>}` or `unit: {const: <text>}`. The quantity is always a pointer.
 - Agent names use lowercase letters, digits, and hyphens; tool names use lowercase letters, digits, and underscores; both start with a letter and have at most 63 characters. The slice that writes the rule reads the tool name constraints of the model provider first.
 - An entry of `allowlists.domains` is an exact host name: lowercased, without a trailing dot, with internationalized names in their ASCII form. Wildcards are refused in phase 1.
@@ -155,6 +155,7 @@ Creation:
 
 - The request body of creation has the fields `spec`, `threat_model`, `design_record`, `supersedes`, and `change_reason`. The first version of an agent carries neither of the last two; a later version carries both, and `supersedes` must name an existing version of the same agent.
 - Creating a version whose hash already exists for the agent answers 200 with the existing version, against 201 for a new one, when the document digests, `supersedes`, and `change_reason` are the same, and writes no audit entry. When any of them differs the request is refused, and for documents the refusal points to the revision endpoints.
+- A `PUT` of a document whose digest equals that of the current one answers 200, stores nothing, and writes no audit entry.
 - Threat model fields: `format: cursus.threat-model/v1`, `threats[]` with `id`, `title`, `description`, `concerns` (tool names, untrusted inputs, or `private_data`, `untrusted_input`, `outbound`), `references`, and `mitigations`. Design record fields: `format: cursus.design-record/v1` and the sections `autonomy`, `run_shape`, `budgets`, `allowlists`, `flow`.
 
 Environment, files, and ADRs:
@@ -165,21 +166,21 @@ Environment, files, and ADRs:
 
 ## Slices
 
-Issues are created after this plan is reviewed. Every core slice that introduces a mechanism carries the `adr-required` label.
+Each slice has an issue on the milestone that carries the text of the slice, and a change to one is made in both. Every core slice that introduces a mechanism carries the `adr-required` label.
 
-| # | Slice | Scope | Depends on |
-|---|---|---|---|
-| 1 | Spec format | core | none |
-| 2 | Version identity | core | 1 |
-| 3 | Validation and the structural check | core | 1 |
-| 4 | Audit log | core | none |
-| 5 | Threat model and design record formats | core | 3 |
-| 6 | Registry and creation in `draft` | core | 2, 3, 4, 5 |
-| 7 | Revision of documents | core | 6 |
-| 8 | Lifecycle states and suspension | core | 6 |
-| 9 | `agentctl validate` and `agentctl apply` | periphery | 6 |
-| 10 | Contribution guide | periphery | none |
-| 11 | Closing: the fixture agent registered | periphery | 7, 8, 9 |
+| # | Slice | Scope | Depends on | Issue |
+|---|---|---|---|---|
+| 1 | Spec format | core | none | [#24](https://github.com/AndersonMonteiro/cursus/issues/24) |
+| 2 | Version identity | core | 1 | [#25](https://github.com/AndersonMonteiro/cursus/issues/25) |
+| 3 | Validation and the structural check | core | 1 | [#26](https://github.com/AndersonMonteiro/cursus/issues/26) |
+| 4 | Audit log | core | none | [#27](https://github.com/AndersonMonteiro/cursus/issues/27) |
+| 5 | Threat model and design record formats | core | 3 | [#28](https://github.com/AndersonMonteiro/cursus/issues/28) |
+| 6 | Registry and creation in `draft` | core | 2, 3, 4, 5 | [#29](https://github.com/AndersonMonteiro/cursus/issues/29) |
+| 7 | Revision of documents | core | 6 | [#30](https://github.com/AndersonMonteiro/cursus/issues/30) |
+| 8 | Lifecycle states and suspension | core | 6 | [#31](https://github.com/AndersonMonteiro/cursus/issues/31) |
+| 9 | `agentctl validate` and `agentctl apply` | periphery | 6 | [#32](https://github.com/AndersonMonteiro/cursus/issues/32) |
+| 10 | Contribution guide | periphery | none | [#33](https://github.com/AndersonMonteiro/cursus/issues/33) |
+| 11 | Closing: the fixture agent registered | periphery | 7, 8, 9 | [#34](https://github.com/AndersonMonteiro/cursus/issues/34) |
 
 Slice 4 has no dependency and can proceed alongside the chain that starts at slice 1. Slices 2 and 3 both follow 1 and can proceed in either order. Slices 7, 8, and 9 can proceed in any order after 6, and slice 10 at any time.
 
@@ -187,7 +188,7 @@ Slice 4 has no dependency and can proceed alongside the chain that starts at sli
 
 - Goal: the spec exists as Go types and as a JSON Schema, and a document that does not conform is refused with the path of each fault.
 - Files: `docs/adr/0003-*.md`, `internal/spec` (types, embedded schema, decoding).
-- Acceptance: a conforming spec decodes. The schema accepts for the sections of later mechanisms exactly what the table under "Spec fields" lists, and ADR-0003 states the rule of extension by addition. The failure tests refuse an unknown field, a missing required field, a tool without one of its three declarations, a `sensitive` block without `quantity` or `unit`, a tool schema that is not valid JSON Schema, a non-empty `policies.approval`, and a `memory` that carries a reserved name, each with the path reported.
+- Acceptance: a conforming spec decodes. The schema accepts for the sections of later mechanisms exactly what the table under "Spec fields" of the plan lists, and ADR-0003 states the rule of extension by addition. The failure tests refuse an unknown field, a missing required field, a tool without one of its three declarations, a `sensitive` block without `quantity` or `unit`, a tool schema that is not valid JSON Schema, a non-empty `policies.approval`, a `memory` that carries a reserved name, an `untrusted_inputs` value other than `run_input`, and a `budgets.max_cost.currency` that is not three uppercase letters, each with the path reported.
 - Out of scope: the hash, checks across fields, HTTP.
 - Points of variation: run shape is a field now and executed later (interface now); the sections of later mechanisms are extended by addition (noted seam); the JSON Schema library is concrete, confined to `internal/spec` (noted seam).
 
@@ -219,7 +220,7 @@ Slice 4 has no dependency and can proceed alongside the chain that starts at sli
 
 - Goal: the two documents are data the control plane can check against a spec.
 - Files: `internal/spec` (document types, schemas, coverage check, digest), templates of both documents, ADR-0004 extended.
-- Acceptance: documents that cover the spec pass, and the digest of a document is the same for two writings of it. The failure tests refuse a threat model with no entry for a tool with `untrusted_output`, for a tool with a sensitive effect, and for a present leg, and a design record with a missing or empty section.
+- Acceptance: documents that cover the spec pass, and the digest of a document is the same for two writings of it. The failure tests refuse a threat model with no entry for a tool with `untrusted_output`, for a tool with a sensitive effect, and for a present leg; a threat whose `concerns` names a tool or an untrusted input that the spec does not declare; and a design record with a missing or empty section.
 - Out of scope: judging the quality of the content, the control mapping to OWASP and MITRE ATLAS, which is a periphery slice at the end of phase 3.
 - Points of variation: both formats carry a `format` field (noted seam).
 
@@ -227,22 +228,22 @@ Slice 4 has no dependency and can proceed alongside the chain that starts at sli
 
 - Goal: `POST /v1/agents/{agent}/versions` creates a version in `draft` when every condition holds and writes nothing otherwise, and a version cannot change once created.
 - Files: `docs/adr/0006-*.md`, `internal/registry`, a migration for `control.agents`, `control.versions`, `control.version_documents`, `control.version_transitions`, `cmd/api` routes, the JSON envelope for 404.
-- Acceptance: a valid request from a `spec_author` returns the version with its hash, state, creator, and document digests, and the audit log holds the creation. `?dry_run=true` checks what it is sent and writes nothing. The read endpoints and `GET /v1/spec/schema` answer an authenticated subject. The content of a version is immutable: the API has no path that changes it, and the database rejects a change by the application role. ADR-0006 chooses how the current state is held, either as a column the application role may update alone or as the latest row of `control.version_transitions` with `control.versions` insert-only. The failure tests show that a request without a threat model, without a design record, from another role, with a spec that fails validation, or with a spec whose `name` differs from `{agent}` in the path is refused with no row written; that a failed audit insert rolls the creation back; that a repeated creation returns the existing version and writes no audit entry; that an update of a version's content is rejected by the database; that one tenant cannot read another's agent; and that two tenants can each hold an agent of the same name.
+- Acceptance: a valid request from a `spec_author` returns the version with its hash, state, creator, and document digests, and the audit log holds the creation. `?dry_run=true` checks what it is sent and writes nothing. The read endpoints and `GET /v1/spec/schema` answer an authenticated subject. The content of a version is immutable: the API has no path that changes it, and the database rejects a change by the application role. ADR-0006 chooses how the current state is held, either as a column the application role may update alone or as the latest row of `control.version_transitions` with `control.versions` insert-only. The migration grants the application role, which slice 4 creates, only the privileges ADR-0006 states for each table. The failure tests show that a request without a threat model, without a design record, from another role, with a spec that fails validation, or with a spec whose `name` differs from `{agent}` in the path is refused with no row written; that a failed audit insert rolls the creation back; that a repeated creation returns the existing version and writes no audit entry; that a repeated creation whose document digests, `supersedes`, or `change_reason` differ is refused; that a `supersedes` naming a version that does not exist or that belongs to another agent is refused; that a first version carrying `supersedes` or `change_reason`, and a later version missing either, are refused; that an update of a version's content is rejected by the database; that one tenant cannot read another's agent; and that two tenants can each hold an agent of the same name.
 - Out of scope: any transition out of `draft`, bindings, runs.
 - Points of variation: repository interface for tests only; document content is stored apart from the audit entry so that it can be erased (deliberate commitment).
 
 ### 7. Revision of documents
 
 - Goal: a threat model or a design record is revised without changing what executes.
-- Files: `internal/registry`.
-- Acceptance: a `PUT` by a `spec_author` stores the new document, keeps the previous digest in the record, appends an audit entry, and leaves the hash and the state unchanged. The failure tests refuse a revision that no longer covers the spec, a revision of a retired version, and a revision by another role.
+- Files: `internal/registry`, ADR-0006 extended.
+- Acceptance: a `PUT` by a `spec_author` stores the new document, keeps the previous digest in the record, appends an audit entry, and leaves the hash and the state unchanged. A `PUT` of a document whose digest equals that of the current one answers 200, stores nothing, and writes no audit entry. The failure tests refuse a revision that no longer covers the spec, a revision of a retired version, and a revision by another role, and show that a revision of a version of another tenant answers 404 with nothing written. The test places a version in `retired` directly in the database, since no retirement exists.
 - Out of scope: erasure of earlier content, which belongs to phase 7.
 
 ### 8. Lifecycle states and suspension
 
 - Goal: the transitions of a version are one function, and an owner can suspend.
 - Files: `docs/adr/0007-*.md`, `internal/lifecycle`, `internal/registry` (suspend handler), `cmd/api` routes.
-- Acceptance: the transition function answers, for a state, a target, and an actor, whether the transition is allowed and what it requires, for the whole table above. `POST .../suspend` by an `owner` with a reason moves an active version to `suspended`, writes the transition record and the audit entry in one transaction. The failure tests refuse every edge outside the table, a suspension without a reason or by another role, a suspension of a `draft`, a promotion in any form, and the second of two concurrent transitions of one version. The test places a version in `active` directly in the database, since no promotion exists.
+- Acceptance: the transition function answers, for a state, a target, and an actor, whether the transition is allowed and what it requires, for the whole table under "States and transitions" of the plan. `POST .../suspend` by an `owner` with a reason moves an active version to `suspended`, writes the transition record and the audit entry in one transaction. The failure tests refuse every edge outside the table, a suspension without a reason or by another role, a suspension of a `draft`, a promotion in any form, and the second of two concurrent transitions of one version, and show that a suspension of a version of another tenant answers 404 with nothing written. The test places a version in `active` directly in the database, since no promotion exists.
 - Out of scope: promotion, lifting a suspension, deprecation, retirement, suspension by the control plane, runs in flight.
 - Points of variation: the actor is a type that admits the control plane besides a subject (interface now); conditions of later edges are named and refused (noted seam).
 
