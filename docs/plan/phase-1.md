@@ -35,7 +35,7 @@ run: {shape: task | session}
 model: {provider, id, parameters}
 risk_tier: low | medium | high
 untrusted_inputs: [run_input]
-budgets: {max_steps, max_cost}
+budgets: {max_steps, max_cost: {amount, currency}}
 tools:
   <name>:
     type: http
@@ -115,9 +115,9 @@ Owner means any subject holding the `owner` role in the tenant; an agent has no 
 | `active` | `suspended` | `owner`, or the control plane | phase 1; phase 6 for the control plane |
 | `suspended` | `active` | `owner`, with fresh passing evidence | phase 5 |
 | `active`, `suspended` | `deprecated` | `owner` | phase 5 |
-| `deprecated` | `retired` | `owner` | phase 7 |
+| `draft`, `deprecated` | `retired` | `owner` | phase 7 |
 
-An owner suspends at once and gives a reason; there is no other condition. The control plane suspends by itself when red-team evidence fails or expires, without waiting for an owner. Suspension applies to one version. Phase 1 builds the transition function for the whole table and the suspend endpoint; every other transition is refused until the phase that builds its conditions, so a promotion is refused unconditionally before phase 5. Rollback and how a deprecated version relates to its successor are set in the phase 5 plan and may add an edge.
+An owner suspends at once and gives a reason; there is no other condition. The control plane suspends by itself when red-team evidence fails or expires, without waiting for an owner. Suspension applies to one version. An owner retires a draft that will not be promoted, which gives a draft an exit other than promotion. Phase 1 builds the transition function for the whole table and the suspend endpoint; every other transition is refused until the phase that builds its conditions, so a promotion is refused unconditionally before phase 5. Rollback and how a deprecated version relates to its successor are set in the phase 5 plan and may add an edge.
 
 ### Names
 
@@ -138,9 +138,7 @@ A dry run checks what it is sent. With the spec alone it validates the spec and 
 
 Phase 1 creates no run. The fields a run carries are named here so that the phase 3 plan starts from them: `shape` (`task`, `session`), `kind` (`evaluation`, `production`), `source`, `parent_run`, and `delegation_depth`. The table is created in phase 3 by the first slice that writes a run.
 
-### Proposed, to settle in the review of this plan
-
-No slice that depends on a point below starts before the point is settled.
+### Rules of format, identity, and creation
 
 Format and identity:
 
@@ -159,9 +157,8 @@ Creation:
 - Creating a version whose hash already exists for the agent answers 200 with the existing version, against 201 for a new one, when the document digests, `supersedes`, and `change_reason` are the same, and writes no audit entry. When any of them differs the request is refused, and for documents the refusal points to the revision endpoints.
 - Threat model fields: `format: cursus.threat-model/v1`, `threats[]` with `id`, `title`, `description`, `concerns` (tool names, untrusted inputs, or `private_data`, `untrusted_input`, `outbound`), `references`, and `mitigations`. Design record fields: `format: cursus.design-record/v1` and the sections `autonomy`, `run_shape`, `budgets`, `allowlists`, `flow`.
 
-Other:
+Environment, files, and ADRs:
 
-- The edge from `draft` to `retired`, taken by an `owner` to abandon a draft and built in phase 7. The baseline gives a draft no exit other than promotion.
 - `CURSUS_MIGRATE_DATABASE_URL` for the role that runs migrations, with `CURSUS_DATABASE_URL` kept for the role of the application.
 - The fixture agent's files live in `examples/fixture-agent/`.
 - ADR numbers: 0003 spec format and version identity, 0004 validation and the structural check, 0005 audit log, 0006 registry and creation in draft, 0007 lifecycle states and suspension.
