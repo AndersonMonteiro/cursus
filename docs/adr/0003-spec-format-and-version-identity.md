@@ -63,7 +63,11 @@ Every object is closed, so an unknown field is refused. No field has a default, 
 
 ### Decoding
 
-`spec.Decode` takes the bytes of a document and returns the spec or the list of its faults. Each fault carries a message and a path, written as an RFC 6901 JSON Pointer into the document. A missing field is reported at the path the field would have, and an unknown field at its own path, so every fault points at the place to edit. All faults of a document are reported together.
+`spec.Decode` takes the bytes of a document and returns the spec or the list of its faults. Each fault carries a message and a path, written as an RFC 6901 JSON Pointer into the document. A missing field is reported at the path the field would have, and an unknown field at its own path, so every fault points at the place to edit. All faults the schema finds in a document are reported together, ordered by path.
+
+Two refusals come before the schema and are reported alone, at the root: a document that is not one JSON value, and one that holds invalid UTF-8, which a JSON decoder would otherwise replace silently and so return a spec that differs from what was sent.
+
+One refusal comes after the schema. `budgets.max_steps` and `budgets.max_cost.amount` are 64-bit integers, and the schema states those bounds. JSON Schema counts `150.0` and `1e2` as integers and has no keyword that refuses them, while `Decode` accepts an integer only when it is written without a decimal point or an exponent. A document that passes the published schema can therefore still be refused for this one reason. The fault carries its path, and it is reported only once the document has no other fault, one such field at a time.
 
 The format covers what one field can say by itself. Checks that read more than one field or a registry, such as the naming rules, the tool types, and the structural check, are the subject of ADR-0004.
 

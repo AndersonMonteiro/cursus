@@ -1,12 +1,15 @@
 package spec
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -324,9 +327,15 @@ func TestDecodeRefuses(t *testing.T) {
 		{"amount written with a decimal point", func(t *testing.T, doc object) {
 			in(t, doc, "budgets", "max_cost")["amount"] = json.RawMessage("150.0")
 		}, "/budgets/max_cost/amount"},
+		{"max_steps written with an exponent", func(t *testing.T, doc object) {
+			in(t, doc, "budgets")["max_steps"] = json.RawMessage("1e2")
+		}, "/budgets/max_steps"},
 		{"max_steps beyond int64", func(t *testing.T, doc object) {
 			in(t, doc, "budgets")["max_steps"] = json.RawMessage("9223372036854775808")
 		}, "/budgets/max_steps"},
+		{"amount below int64", func(t *testing.T, doc object) {
+			in(t, doc, "budgets", "max_cost")["amount"] = json.RawMessage("-9223372036854775809")
+		}, "/budgets/max_cost/amount"},
 		{"tools that is a list", func(t *testing.T, doc object) {
 			doc["tools"] = []any{}
 		}, "/tools"},
@@ -361,6 +370,93 @@ func TestDecodeReportsEveryFault(t *testing.T) {
 	if !slices.IsSortedFunc(faults, func(a, b Fault) int { return strings.Compare(a.Path, b.Path) }) {
 		t.Errorf("faults are not sorted by path: %+v", faults)
 	}
+}
+
+// An integer beyond int64 is a fault of the schema, so it is reported with the
+// other faults of the document and a client reading the schema sees the bound.
+func TestDecodeReportsAnIntegerOutOfRangeWithTheOtherFaults(t *testing.T) {
+	doc := validDocument(t)
+	doc["owner"] = "someone"
+	in(t, doc, "budgets")["max_steps"] = json.RawMessage("9223372036854775808")
+
+	faults := faultsOf(t, encode(t, doc))
+	requireFaultAt(t, faults, "/owner")
+	requireFaultAt(t, faults, "/budgets/max_steps")
+}
+
+func TestDecodeAcceptsTheBoundsOfInt64(t *testing.T) {
+	doc := validDocument(t)
+	in(t, doc, "budgets")["max_steps"] = json.RawMessage("9223372036854775807")
+	in(t, doc, "budgets", "max_cost")["amount"] = json.RawMessage("-9223372036854775808")
+
+	s, err := Decode(encode(t, doc))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if s.Budgets.MaxSteps != math.MaxInt64 || s.Budgets.MaxCost.Amount != math.MinInt64 {
+		t.Errorf("budgets = %+v", s.Budgets)
+	}
+}
+
+func TestDecodeSortsArrayIndexesByValue(t *testing.T) {
+	doc := validDocument(t)
+	inputs := make([]any, 11)
+	for i := range inputs {
+		inputs[i] = "run_input"
+	}
+	inputs[2], inputs[10] = "tool_output", "tool_output"
+	doc["untrusted_inputs"] = inputs
+
+	var paths []string
+	for _, f := range faultsOf(t, encode(t, doc)) {
+		paths = append(paths, f.Path)
+	}
+	if want := []string{"/untrusted_inputs/2", "/untrusted_inputs/10"}; !slices.Equal(paths, want) {
+		t.Errorf("paths = %v, want %v", paths, want)
+	}
+}
+
+func TestDecodeRefusesInvalidUTF8(t *testing.T) {
+	valid, err := os.ReadFile("testdata/valid.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string][]byte{
+		"in a decoded string":  bytes.Replace(valid, []byte("order-helper"), []byte("order-\xff"), 1),
+		"inside a tool schema": bytes.Replace(valid, []byte(`"order_id"`), []byte("\"order_\xff\""), 1),
+	}
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			if bytes.Equal(data, valid) {
+				t.Fatal("the fixture was not changed")
+			}
+			requireFaultAt(t, faultsOf(t, data), "")
+		})
+	}
+}
+
+func TestDecodeFromConcurrentCallers(t *testing.T) {
+	doc := validDocument(t)
+	good := encode(t, doc)
+	doc["owner"] = "someone"
+	in(t, doc, "budgets", "max_cost")["currency"] = "usd"
+	bad := encode(t, doc)
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			for range 20 {
+				if _, err := Decode(good); err != nil {
+					t.Errorf("Decode of a conforming spec: %v", err)
+				}
+				var derr *DecodeError
+				if _, err := Decode(bad); !errors.As(err, &derr) || len(derr.Faults) != 2 {
+					t.Errorf("Decode of a spec with two faults: %v", err)
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
 
 func TestDecodeEscapesThePath(t *testing.T) {

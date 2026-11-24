@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
@@ -61,14 +63,18 @@ var compiledSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
 	return c.Compile(schemaResource)
 })
 
-var printer = message.NewPrinter(language.English)
-
 // Decode returns the spec that data holds, or a *DecodeError with every fault
 // when data is not a document of the format.
 func Decode(data []byte) (*Spec, error) {
 	schema, err := compiledSchema()
 	if err != nil {
 		return nil, fmt.Errorf("compile the spec schema: %w", err)
+	}
+
+	// encoding/json replaces an invalid byte sequence with U+FFFD instead of
+	// refusing it, which would return a spec that differs from what was sent.
+	if !utf8.Valid(data) {
+		return nil, &DecodeError{Faults: []Fault{{Message: "not a JSON document: invalid UTF-8"}}}
 	}
 
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
@@ -97,7 +103,18 @@ func Decode(data []byte) (*Spec, error) {
 }
 
 func faults(root *jsonschema.ValidationError) []Fault {
-	var out []Fault
+	type located struct {
+		location []string
+		message  string
+	}
+	var found []located
+	add := func(message string, location []string, more ...string) {
+		found = append(found, located{slices.Concat(location, more), message})
+	}
+	// Created per call: the package documents no guarantee that one printer
+	// serves concurrent callers.
+	printer := message.NewPrinter(language.English)
+
 	var walk func(e *jsonschema.ValidationError)
 	walk = func(e *jsonschema.ValidationError) {
 		// A node with causes only groups them; the faults are the leaves.
@@ -113,40 +130,64 @@ func faults(root *jsonschema.ValidationError) []Fault {
 		switch k := e.ErrorKind.(type) {
 		case *kind.Required:
 			for _, name := range k.Missing {
-				out = append(out, Fault{Path: pointer(e.InstanceLocation, name), Message: "required field is missing"})
+				add("required field is missing", e.InstanceLocation, name)
 			}
 		case *kind.AdditionalProperties:
 			for _, name := range k.Properties {
-				out = append(out, Fault{Path: pointer(e.InstanceLocation, name), Message: "unknown field"})
+				add("unknown field", e.InstanceLocation, name)
 			}
+		// The library prints both numbers rounded, which for the bounds of
+		// an integer shows the same figure twice.
+		case *kind.Maximum:
+			add("must be at most "+k.Want.RatString(), e.InstanceLocation)
+		case *kind.Minimum:
+			add("must be at least "+k.Want.RatString(), e.InstanceLocation)
 		default:
-			out = append(out, Fault{Path: pointer(e.InstanceLocation), Message: k.LocalizedString(printer)})
+			add(k.LocalizedString(printer), e.InstanceLocation)
 		}
 	}
 	walk(root)
 
-	slices.SortFunc(out, func(a, b Fault) int {
-		if c := strings.Compare(a.Path, b.Path); c != 0 {
+	slices.SortFunc(found, func(a, b located) int {
+		if c := slices.CompareFunc(a.location, b.location, compareTokens); c != 0 {
 			return c
 		}
-		return strings.Compare(a.Message, b.Message)
+		return strings.Compare(a.message, b.message)
 	})
+
+	out := make([]Fault, len(found))
+	for i, f := range found {
+		out[i] = Fault{Path: pointer(f.location), Message: f.message}
+	}
 	return slices.Compact(out)
 }
 
-func pointer(location []string, more ...string) string {
-	var sb strings.Builder
-	for _, tokens := range [][]string{location, more} {
-		for _, tok := range tokens {
-			sb.WriteByte('/')
-			sb.WriteString(strings.NewReplacer("~", "~0", "/", "~1").Replace(tok))
+// compareTokens orders two tokens of a path, with array indexes by value so
+// that item 2 comes before item 10.
+func compareTokens(a, b string) int {
+	x, errA := strconv.ParseUint(a, 10, 64)
+	y, errB := strconv.ParseUint(b, 10, 64)
+	if errA == nil && errB == nil && x != y {
+		if x < y {
+			return -1
 		}
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+
+func pointer(location []string) string {
+	var sb strings.Builder
+	for _, tok := range location {
+		sb.WriteByte('/')
+		sb.WriteString(strings.NewReplacer("~", "~0", "/", "~1").Replace(tok))
 	}
 	return sb.String()
 }
 
 // typeFault covers what the schema accepts and a Go type does not hold: an
-// integer written with a fraction or an exponent, or one beyond int64.
+// integer written with a decimal point or an exponent, such as 150.0, which
+// JSON Schema counts as an integer and cannot be told to refuse.
 func typeFault(err error) Fault {
 	var terr *json.UnmarshalTypeError
 	if errors.As(err, &terr) && terr.Field != "" {
