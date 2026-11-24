@@ -45,8 +45,7 @@ func (e *DecodeError) Error() string {
 	return "spec does not conform to " + Format + ": " + strings.Join(parts, "; ")
 }
 
-// The name only identifies the embedded resource to the compiler; nothing is
-// read from disk or from the network.
+// Names the embedded resource for the compiler; nothing is loaded from it.
 const schemaResource = "schema.json"
 
 var compiledSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
@@ -90,9 +89,8 @@ func Decode(data []byte) (*Spec, error) {
 		return nil, &DecodeError{Faults: faults(verr)}
 	}
 
-	// The schema has already refused unknown fields. The option stays on so
-	// that a field the schema gains and the types lack fails here instead of
-	// being dropped.
+	// Fails when the schema gains a field that the types lack, instead of
+	// dropping it.
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var s Spec
@@ -111,22 +109,19 @@ func faults(root *jsonschema.ValidationError) []Fault {
 	add := func(message string, location []string, more ...string) {
 		found = append(found, located{slices.Concat(location, more), message})
 	}
-	// Created per call: the package documents no guarantee that one printer
-	// serves concurrent callers.
+	// Per call: the package documents no guarantee for concurrent use.
 	printer := message.NewPrinter(language.English)
 
 	var walk func(e *jsonschema.ValidationError)
 	walk = func(e *jsonschema.ValidationError) {
-		// A node with causes only groups them; the faults are the leaves.
 		if len(e.Causes) > 0 {
 			for _, c := range e.Causes {
 				walk(c)
 			}
 			return
 		}
-		// The library reports a missing or an unknown property at the object
-		// that holds it. The fault points at the property itself, which is
-		// the place to edit.
+		// The library reports a missing or an unknown property at its parent;
+		// the fault points at the property, which is the place to edit.
 		switch k := e.ErrorKind.(type) {
 		case *kind.Required:
 			for _, name := range k.Missing {
@@ -136,8 +131,6 @@ func faults(root *jsonschema.ValidationError) []Fault {
 			for _, name := range k.Properties {
 				add("unknown field", e.InstanceLocation, name)
 			}
-		// The library prints both numbers rounded, which for the bounds of
-		// an integer shows the same figure twice.
 		case *kind.Maximum:
 			add("must be at most "+k.Want.RatString(), e.InstanceLocation)
 		case *kind.Minimum:
@@ -162,8 +155,7 @@ func faults(root *jsonschema.ValidationError) []Fault {
 	return slices.Compact(out)
 }
 
-// compareTokens orders two tokens of a path, with array indexes by value so
-// that item 2 comes before item 10.
+// Array indexes compare by value, so item 2 comes before item 10.
 func compareTokens(a, b string) int {
 	x, errA := strconv.ParseUint(a, 10, 64)
 	y, errB := strconv.ParseUint(b, 10, 64)
@@ -185,14 +177,12 @@ func pointer(location []string) string {
 	return sb.String()
 }
 
-// typeFault covers what the schema accepts and a Go type does not hold: an
-// integer written with a decimal point or an exponent, such as 150.0, which
-// JSON Schema counts as an integer and cannot be told to refuse.
+// typeFault covers an integer written as 150.0 or 1e2, which JSON Schema
+// accepts as an integer and Go does not decode into one.
 func typeFault(err error) Fault {
 	var terr *json.UnmarshalTypeError
 	if errors.As(err, &terr) && terr.Field != "" {
-		// encoding/json joins the field names with dots. Only the integers of
-		// budgets can fail here, and none of their names holds a dot.
+		// encoding/json reports the field as names joined by dots.
 		return Fault{
 			Path:    pointer(strings.Split(terr.Field, ".")),
 			Message: fmt.Sprintf("%s does not fit the field", terr.Value),

@@ -372,8 +372,6 @@ func TestDecodeReportsEveryFault(t *testing.T) {
 	}
 }
 
-// An integer beyond int64 is a fault of the schema, so it is reported with the
-// other faults of the document and a client reading the schema sees the bound.
 func TestDecodeReportsAnIntegerOutOfRangeWithTheOtherFaults(t *testing.T) {
 	doc := validDocument(t)
 	doc["owner"] = "someone"

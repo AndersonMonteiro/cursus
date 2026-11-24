@@ -37,8 +37,7 @@ type Run struct {
 type Model struct {
 	Provider string `json:"provider"`
 	ID       string `json:"id"`
-	// Kept as written: the content is open, and decoding it into Go values
-	// would round its numbers before the version hash reads them.
+	// Raw, like the tool schemas: the version hash reads them as written.
 	Parameters json.RawMessage `json:"parameters"`
 }
 
@@ -53,10 +52,8 @@ type MaxCost struct {
 }
 
 type Tool struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	// Kept as written: the version hash covers a tool schema with its arrays
-	// in the order given.
+	Type            string          `json:"type"`
+	Description     string          `json:"description"`
 	InputSchema     json.RawMessage `json:"input_schema"`
 	OutputSchema    json.RawMessage `json:"output_schema"`
 	Effect          Effect          `json:"effect"`
@@ -89,8 +86,7 @@ type Policies struct {
 	SensitiveOperations SensitiveOperations `json:"sensitive_operations"`
 }
 
-// Approval, SensitiveOperations, and Memory have no fields until the
-// mechanism that reads each one adds them (ADR-0003, extension by addition).
+// Without fields until the mechanism that reads each one adds them (ADR-0003).
 type Approval struct{}
 
 type SensitiveOperations struct{}
@@ -98,8 +94,7 @@ type SensitiveOperations struct{}
 type Memory struct{}
 
 type Guardrails struct {
-	// The format accepts only empty lists so far, and raw elements leave the
-	// shape of a checker entry to the ADR that introduces checkers.
+	// Raw elements: the shape of a checker entry is not decided yet.
 	Input  []json.RawMessage `json:"input"`
 	Output []json.RawMessage `json:"output"`
 }
