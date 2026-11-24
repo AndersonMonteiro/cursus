@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cursus.agent/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "name",
+    "task",
+    "instructions",
+    "run",
+    "model",
+    "risk_tier",
+    "untrusted_inputs",
+    "budgets",
+    "tools",
+    "allowlists",
+    "policies",
+    "guardrails",
+    "memory"
+  ],
+  "properties": {
+    "format": { "const": "cursus.agent/v1" },
+    "name": { "type": "string" },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "success_criterion"],
+      "properties": {
+        "description": { "type": "string" },
+        "success_criterion": { "type": "string" }
+      }
+    },
+    "instructions": { "type": "string" },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shape"],
+      "properties": {
+        "shape": { "enum": ["task", "session"] }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "id", "parameters"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "id": { "type": "string" },
+        "parameters": { "type": "object" }
+      }
+    },
+    "risk_tier": { "enum": ["low", "medium", "high"] },
+    "untrusted_inputs": {
+      "type": "array",
+      "items": { "enum": ["run_input"] }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_steps", "max_cost"],
+      "properties": {
+        "max_steps": { "type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807 },
+        "max_cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["amount", "currency"],
+          "properties": {
+            "amount": { "type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807 },
+            "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/tool" }
+    },
+    "allowlists": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domains"],
+      "properties": {
+        "domains": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval", "sensitive_operations"],
+      "properties": {
+        "approval": { "type": "object", "additionalProperties": false },
+        "sensitive_operations": { "type": "object", "additionalProperties": false }
+      }
+    },
+    "guardrails": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output"],
+      "properties": {
+        "input": { "type": "array", "maxItems": 0 },
+        "output": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "memory": { "type": "object", "additionalProperties": false }
+  },
+  "$defs": {
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "description",
+        "input_schema",
+        "output_schema",
+        "effect",
+        "private_data",
+        "untrusted_output"
+      ],
+      "properties": {
+        "type": { "type": "string" },
+        "description": { "type": "string" },
+        "input_schema": { "$ref": "https://json-schema.org/draft/2020-12/schema" },
+        "output_schema": { "$ref": "https://json-schema.org/draft/2020-12/schema" },
+        "effect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["read", "write", "send"] },
+            "sensitive": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["quantity", "unit"],
+              "properties": {
+                "quantity": { "type": "string" },
+                "unit": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "maxProperties": 1,
+                  "properties": {
+                    "pointer": { "type": "string" },
+                    "const": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "private_data": { "type": "boolean" },
+        "untrusted_output": { "type": "boolean" }
+      }
+    }
+  }
+}

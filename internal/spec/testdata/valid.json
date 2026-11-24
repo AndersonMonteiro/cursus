@@ -1,0 +1,96 @@
+{
+  "format": "cursus.agent/v1",
+  "name": "order-helper",
+  "task": {
+    "description": "Answer a question about one order and refund it when the refund rule allows.",
+    "success_criterion": "The answer cites the order status, and a refund is issued only for an order the rule covers."
+  },
+  "instructions": "Look the order up before answering. Never refund more than the order total.",
+  "run": { "shape": "task" },
+  "model": {
+    "provider": "example",
+    "id": "example-model-2026-01-15",
+    "parameters": { "temperature": 0.2, "max_tokens": 1024 }
+  },
+  "risk_tier": "medium",
+  "untrusted_inputs": ["run_input"],
+  "budgets": {
+    "max_steps": 12,
+    "max_cost": { "amount": 150, "currency": "USD" }
+  },
+  "tools": {
+    "lookup_order": {
+      "type": "http",
+      "description": "Reads one order by its identifier.",
+      "input_schema": {
+        "type": "object",
+        "properties": { "order_id": { "type": "string" } },
+        "required": ["order_id"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "total": { "type": "integer" }
+        },
+        "required": ["status", "total"]
+      },
+      "effect": { "kind": "read" },
+      "private_data": true,
+      "untrusted_output": false
+    },
+    "refund_order": {
+      "type": "http",
+      "description": "Refunds part or all of one order.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "string" },
+          "amount": { "type": "integer" },
+          "currency": { "type": "string" }
+        },
+        "required": ["order_id", "amount", "currency"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": { "refund_id": { "type": "string" } },
+        "required": ["refund_id"]
+      },
+      "effect": {
+        "kind": "write",
+        "sensitive": {
+          "quantity": "/amount",
+          "unit": { "pointer": "/currency" }
+        }
+      },
+      "private_data": false,
+      "untrusted_output": false
+    },
+    "grant_points": {
+      "type": "http",
+      "description": "Adds loyalty points to the account that placed an order.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "order_id": { "type": "string" },
+          "points": { "type": "integer" }
+        },
+        "required": ["order_id", "points"]
+      },
+      "output_schema": true,
+      "effect": {
+        "kind": "write",
+        "sensitive": {
+          "quantity": "/points",
+          "unit": { "const": "points" }
+        }
+      },
+      "private_data": false,
+      "untrusted_output": false
+    }
+  },
+  "allowlists": { "domains": ["orders.example.com"] },
+  "policies": { "approval": {}, "sensitive_operations": {} },
+  "guardrails": { "input": [], "output": [] },
+  "memory": {}
+}
