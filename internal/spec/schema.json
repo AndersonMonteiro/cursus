@@ -60,13 +60,13 @@
       "additionalProperties": false,
       "required": ["max_steps", "max_cost"],
       "properties": {
-        "max_steps": { "type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807 },
+        "max_steps": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
         "max_cost": {
           "type": "object",
           "additionalProperties": false,
           "required": ["amount", "currency"],
           "properties": {
-            "amount": { "type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807 },
+            "amount": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
             "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
           }
         }
