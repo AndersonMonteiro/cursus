@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"math"
 	"os"
 	"reflect"
 	"slices"
@@ -105,7 +104,7 @@ func TestDecodeConformingSpec(t *testing.T) {
 	if s.Budgets.MaxSteps != 12 || s.Budgets.MaxCost.Amount != 150 || s.Budgets.MaxCost.Currency != "USD" {
 		t.Errorf("budgets = %+v", s.Budgets)
 	}
-	if !slices.Equal(s.Allowlists.Domains, []string{"orders.example.com"}) {
+	if !slices.Equal(s.Allowlists.Domains, []string{"orders.example.com", "loyalty.example.com"}) {
 		t.Errorf("allowlists.domains = %v", s.Allowlists.Domains)
 	}
 	if len(s.Guardrails.Input) != 0 || len(s.Guardrails.Output) != 0 {
@@ -330,12 +329,15 @@ func TestDecodeRefuses(t *testing.T) {
 		{"max_steps written with an exponent", func(t *testing.T, doc object) {
 			in(t, doc, "budgets")["max_steps"] = json.RawMessage("1e2")
 		}, "/budgets/max_steps"},
+		{"max_steps above the integers a double holds exactly", func(t *testing.T, doc object) {
+			in(t, doc, "budgets")["max_steps"] = json.RawMessage("9007199254740992")
+		}, "/budgets/max_steps"},
+		{"amount below the integers a double holds exactly", func(t *testing.T, doc object) {
+			in(t, doc, "budgets", "max_cost")["amount"] = json.RawMessage("-9007199254740992")
+		}, "/budgets/max_cost/amount"},
 		{"max_steps beyond int64", func(t *testing.T, doc object) {
 			in(t, doc, "budgets")["max_steps"] = json.RawMessage("9223372036854775808")
 		}, "/budgets/max_steps"},
-		{"amount below int64", func(t *testing.T, doc object) {
-			in(t, doc, "budgets", "max_cost")["amount"] = json.RawMessage("-9223372036854775809")
-		}, "/budgets/max_cost/amount"},
 		{"tools that is a list", func(t *testing.T, doc object) {
 			doc["tools"] = []any{}
 		}, "/tools"},
@@ -382,16 +384,17 @@ func TestDecodeReportsAnIntegerOutOfRangeWithTheOtherFaults(t *testing.T) {
 	requireFaultAt(t, faults, "/budgets/max_steps")
 }
 
-func TestDecodeAcceptsTheBoundsOfInt64(t *testing.T) {
+func TestDecodeAcceptsTheBoundsOfAnExactInteger(t *testing.T) {
+	const maxExact = 1<<53 - 1
 	doc := validDocument(t)
-	in(t, doc, "budgets")["max_steps"] = json.RawMessage("9223372036854775807")
-	in(t, doc, "budgets", "max_cost")["amount"] = json.RawMessage("-9223372036854775808")
+	in(t, doc, "budgets")["max_steps"] = json.RawMessage("9007199254740991")
+	in(t, doc, "budgets", "max_cost")["amount"] = json.RawMessage("-9007199254740991")
 
 	s, err := Decode(encode(t, doc))
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if s.Budgets.MaxSteps != math.MaxInt64 || s.Budgets.MaxCost.Amount != math.MinInt64 {
+	if s.Budgets.MaxSteps != maxExact || s.Budgets.MaxCost.Amount != -maxExact {
 		t.Errorf("budgets = %+v", s.Budgets)
 	}
 }
@@ -431,6 +434,102 @@ func TestDecodeRefusesInvalidUTF8(t *testing.T) {
 			requireFaultAt(t, faultsOf(t, data), "")
 		})
 	}
+}
+
+func TestDecodeRefusesADuplicateKey(t *testing.T) {
+	valid, err := os.ReadFile("testdata/valid.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name     string
+		old, new string
+		paths    []string
+	}{
+		{"at the top level, lowering the risk tier",
+			`"risk_tier": "medium"`, `"risk_tier": "high", "risk_tier": "medium"`,
+			[]string{"/risk_tier"}},
+		{"in a tool declaration",
+			`"private_data": true`, `"private_data": true, "private_data": false`,
+			[]string{"/tools/lookup_order/private_data"}},
+		{"inside a tool schema",
+			`"order_id": { "type": "string" }`, `"order_id": { "type": "string", "type": "integer" }`,
+			[]string{"/tools/lookup_order/input_schema/properties/order_id/type"}},
+		{"inside model.parameters",
+			`"temperature": 0.2`, `"temperature": 0.2, "temperature": 0.9`,
+			[]string{"/model/parameters/temperature"}},
+		{"inside an array",
+			`"max_tokens": 1024`, `"max_tokens": 1024, "stops": [{}, {"a": 1, "a": 2}]`,
+			[]string{"/model/parameters/stops/1/a"}},
+		{"written with an escape",
+			`"name": "order-helper"`, `"name": "order-helper", "n\u0061me": "other"`,
+			[]string{"/name"}},
+		{"with the same value both times",
+			`"memory": {}`, `"memory": {}, "memory": {}`,
+			[]string{"/memory"}},
+		{"three times",
+			`"memory": {}`, `"memory": {}, "memory": {}, "memory": {}`,
+			[]string{"/memory"}},
+		{"alone, without the faults of the schema",
+			`"risk_tier": "medium"`, `"risk_tier": "medium", "risk_tier": "medium", "owner": "someone"`,
+			[]string{"/risk_tier"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := bytes.Replace(valid, []byte(tc.old), []byte(tc.new), 1)
+			if bytes.Equal(data, valid) {
+				t.Fatal("the fixture was not changed")
+			}
+			var paths []string
+			for _, f := range faultsOf(t, data) {
+				t.Logf("refused at %q: %s", f.Path, f.Message)
+				paths = append(paths, f.Path)
+			}
+			if !slices.Equal(paths, tc.paths) {
+				t.Errorf("paths = %v, want %v", paths, tc.paths)
+			}
+		})
+	}
+
+	t.Run("two in one document", func(t *testing.T) {
+		data := bytes.Replace(valid, []byte(`"memory": {}`), []byte(`"memory": {}, "memory": {}`), 1)
+		data = bytes.Replace(data, []byte(`"temperature": 0.2`), []byte(`"temperature": 0.2, "temperature": 0.9`), 1)
+		var paths []string
+		for _, f := range faultsOf(t, data) {
+			paths = append(paths, f.Path)
+		}
+		if want := []string{"/memory", "/model/parameters/temperature"}; !slices.Equal(paths, want) {
+			t.Errorf("paths = %v, want %v", paths, want)
+		}
+	})
+}
+
+func TestDecodeRefusesWhatHasNoCanonicalForm(t *testing.T) {
+	valid, err := os.ReadFile("testdata/valid.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, old, new string }{
+		{"an escaped surrogate without its pair", `Reads one order`, `Reads one \ud83dorder`},
+		{"a low surrogate first", `Reads one order`, `Reads one \ude00\ud83dorder`},
+		{"a number beyond the range of a double", `"temperature": 0.2`, `"temperature": 1e400`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := bytes.Replace(valid, []byte(tc.old), []byte(tc.new), 1)
+			if bytes.Equal(data, valid) {
+				t.Fatal("the fixture was not changed")
+			}
+			requireFaultAt(t, faultsOf(t, data), "")
+		})
+	}
+
+	t.Run("a surrogate pair is accepted", func(t *testing.T) {
+		data := bytes.Replace(valid, []byte(`Reads one order`), []byte(`Reads one \ud83d\ude00order`), 1)
+		if _, err := Decode(data); err != nil {
+			t.Errorf("Decode: %v", err)
+		}
+	})
 }
 
 func TestDecodeFromConcurrentCallers(t *testing.T) {
@@ -548,7 +647,7 @@ func compareWithSchema(t *testing.T, root, node object, typ reflect.Type, path s
 		seen := map[string]bool{}
 		for i := range typ.NumField() {
 			field := typ.Field(i)
-			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			name, options, _ := strings.Cut(field.Tag.Get("json"), ",")
 			if name == "" || name == "-" {
 				t.Errorf("%s: field %s has no JSON name", path, field.Name)
 				continue
@@ -564,6 +663,9 @@ func compareWithSchema(t *testing.T, root, node object, typ reflect.Type, path s
 			optional := field.Type.Kind() == reflect.Pointer
 			if optional == slices.Contains(required, name) {
 				t.Errorf("%s: required in the schema = %t, pointer in the types = %t", fieldPath, !optional, optional)
+			}
+			if optional && !slices.Contains(strings.Split(options, ","), "omitempty") {
+				t.Errorf("%s: may be absent and is written when absent, which would change the hash", fieldPath)
 			}
 			compareWithSchema(t, root, property, field.Type, fieldPath)
 		}

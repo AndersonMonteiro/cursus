@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/gowebpki/jcs"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 	"golang.org/x/text/language"
@@ -81,6 +82,21 @@ func Decode(data []byte) (*Spec, error) {
 		return nil, &DecodeError{Faults: []Fault{{Message: "not a JSON document: " + err.Error()}}}
 	}
 
+	// The schema library and encoding/json both keep the last of two equal
+	// keys, so a repeated key has to be refused before either reads the value.
+	duplicates, err := duplicateKeys(data)
+	if err != nil {
+		return nil, fmt.Errorf("scan the spec for duplicate keys: %w", err)
+	}
+	if len(duplicates) > 0 {
+		return nil, &DecodeError{Faults: duplicates}
+	}
+
+	// Refused here so that a spec Decode returns always has a hash.
+	if _, err := jcs.Transform(data); err != nil {
+		return nil, &DecodeError{Faults: []Fault{{Message: "no canonical form under RFC 8785: " + err.Error()}}}
+	}
+
 	if err := schema.Validate(doc); err != nil {
 		var verr *jsonschema.ValidationError
 		if !errors.As(err, &verr) {
@@ -100,11 +116,12 @@ func Decode(data []byte) (*Spec, error) {
 	return &s, nil
 }
 
+type located struct {
+	location []string
+	message  string
+}
+
 func faults(root *jsonschema.ValidationError) []Fault {
-	type located struct {
-		location []string
-		message  string
-	}
 	var found []located
 	add := func(message string, location []string, more ...string) {
 		found = append(found, located{slices.Concat(location, more), message})
@@ -140,7 +157,10 @@ func faults(root *jsonschema.ValidationError) []Fault {
 		}
 	}
 	walk(root)
+	return sortedFaults(found)
+}
 
+func sortedFaults(found []located) []Fault {
 	slices.SortFunc(found, func(a, b located) int {
 		if c := slices.CompareFunc(a.location, b.location, compareTokens); c != 0 {
 			return c
@@ -175,6 +195,57 @@ func pointer(location []string) string {
 		sb.WriteString(strings.NewReplacer("~", "~0", "/", "~1").Replace(tok))
 	}
 	return sb.String()
+}
+
+// duplicateKeys reports every key that one object holds more than once. data
+// is already known to be one JSON value.
+func duplicateKeys(data []byte) ([]Fault, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var found []located
+
+	var scan func(location []string) error
+	scan = func(location []string) error {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch tok {
+		case json.Delim('{'):
+			seen := map[string]bool{}
+			for dec.More() {
+				tok, err := dec.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := tok.(string)
+				if !ok {
+					return fmt.Errorf("object key is %T", tok)
+				}
+				at := slices.Concat(location, []string{key})
+				if seen[key] {
+					found = append(found, located{at, "duplicate field"})
+				}
+				seen[key] = true
+				if err := scan(at); err != nil {
+					return err
+				}
+			}
+			_, err = dec.Token()
+		case json.Delim('['):
+			for i := 0; dec.More(); i++ {
+				if err := scan(slices.Concat(location, []string{strconv.Itoa(i)})); err != nil {
+					return err
+				}
+			}
+			_, err = dec.Token()
+		}
+		return err
+	}
+	if err := scan(nil); err != nil {
+		return nil, err
+	}
+	return sortedFaults(found), nil
 }
 
 // typeFault covers an integer written as 150.0 or 1e2, which JSON Schema

@@ -89,7 +89,7 @@
       "untrusted_output": false
     }
   },
-  "allowlists": { "domains": ["orders.example.com"] },
+  "allowlists": { "domains": ["orders.example.com", "loyalty.example.com"] },
   "policies": { "approval": {}, "sensitive_operations": {} },
   "guardrails": { "input": [], "output": [] },
   "memory": {}
